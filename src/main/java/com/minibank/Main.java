@@ -15,7 +15,7 @@ public class Main {
         // для демо просто задаём баланс напрямую через первый перевод
         // от несуществующего служебного счёта нет смысла эмулировать,
         // поэтому просто выставим баланс через пакетный доступ в демо:
-        account1.setBalance(new BigDecimal("1000.00"));
+        bank.changeBalance(account1.getId(), new BigDecimal("1000.00"));
 
         System.out.println("=== Обычный перевод ===");
         bank.transfer(account1.getId(), account2.getId(), new BigDecimal("100.00"));
