@@ -1,6 +1,7 @@
 package com.minibank;
 
 import java.math.BigDecimal;
+import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -36,59 +37,158 @@ public class BankService {
     private final AtomicLong accountIdSeq = new AtomicLong(1);
     private final AtomicLong transactionIdSeq = new AtomicLong(1);
 
+    private Connection connect() throws SQLException {
+        return DriverManager.getConnection(
+                "jdbc:postgresql://localhost:5433/minibank",
+                "minibank",
+                System.getenv("MINIBANK_DB_PASSWORD")
+        );
+    }
+
     public Client registerClient(String name, String email) {
-        Long id = clientIdSeq.getAndIncrement();
-        Client client = new Client(id, name, email);
-        clients.put(id, client);
-        return client;
+        String sql = "INSERT INTO clients (name, email) VALUES (?, ?) RETURNING id";
+
+        try (Connection connection = connect();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setString(1, name);
+            statement.setString(2, email);
+
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    throw new SQLException("База не вернула ID клиента");
+                }
+               long id = result.getLong("id");
+                return new Client(id, name, email);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Не удалось сохранить клиента", e);
+        }
     }
 
     public Account openAccount(Long clientId, String accountNumber) {
-        if (!clients.containsKey(clientId)) {
-            throw new IllegalArgumentException("Client not found: " + clientId);
-        }
-        Long id = accountIdSeq.getAndIncrement();
-        Account account = new Account(id, clientId, accountNumber, BigDecimal.ZERO);
-        accounts.put(id, account);
-        return account;
-    }
+        getClient(clientId);
 
-    public Account getAccount(Long accountId) {
-        Account account = accounts.get(accountId);
-        if (account == null) {
-            throw new IllegalArgumentException("Account not found: " + accountId);
+        String sql = """
+            INSERT INTO accounts (client_id, account_number)
+            VALUES (?, ?)
+            RETURNING id, balance
+            """;
+
+        try (Connection connection = connect();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setLong(1, clientId);
+            statement.setString(2, accountNumber);
+
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    throw new SQLException("База не вернула данные счёта");
+                }
+
+                Long id = result.getLong("id");
+                BigDecimal balance = result.getBigDecimal("balance");
+                return new Account(id,clientId,accountNumber,balance);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Не удалось открыть счёт", e);
         }
-        return account;
     }
 
     public Client getClient(Long clientId) {
-        Client client = clients.get(clientId);
-        if (client == null) {
-            throw new IllegalArgumentException("Client not found: " + clientId);
+        String sql = "SELECT id, name, email FROM clients WHERE id = ?";
+
+        try (Connection connection = connect();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setLong(1, clientId);
+
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    throw new IllegalArgumentException("Client not found: " + clientId);
+                }
+
+                long id = result.getLong("id");
+                String name = result.getString("name");
+                String email = result.getString("email");
+                return new Client(id, name, email);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Не удалось прочитать клиента", e);
         }
-        return client;
+    }
+
+    public Account getAccount(Long accountId) {
+        String sql = "SELECT id, client_id, account_number, balance FROM accounts WHERE id = ?";
+
+        try (Connection connection = connect();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setLong(1, accountId);
+
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    throw new IllegalArgumentException("Account not found: " + accountId);
+                }
+
+                long id = result.getLong("id");
+                long client_id = result.getLong("client_id");
+                String account_number = result.getString("account_number");
+                BigDecimal balance = result.getBigDecimal("balance");
+                return new Account(id, client_id, account_number, balance);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Не удалось прочитать аккаунт", e);
+        }
     }
 
     public void transfer(Long fromAccountId, Long toAccountId, BigDecimal amount) {
         Account from = getAccount(fromAccountId);
 
-        // Списываем деньги ДО того, как проверили существование счёта-
-        // получателя — если toAccountId не существует, деньги уже
-        // списаны и потеряны.
         if (from.getBalance().compareTo(amount) < 0) {
             throw new IllegalStateException("Insufficient funds on account " + fromAccountId);
         }
-        from.setBalance(from.getBalance().subtract(amount));
+
+        changeBalance(fromAccountId, amount.negate());
         recordTransaction(fromAccountId, amount.negate(), "TRANSFER_OUT");
 
-        Account to = getAccount(toAccountId); // если бросит исключение — деньги уже пропали
-
-        to.setBalance(to.getBalance().add(amount));
+        changeBalance(toAccountId, amount);
         recordTransaction(toAccountId, amount, "TRANSFER_IN");
     }
 
+    public void changeBalance(Long accountId, BigDecimal delta) {
+        String sql = "UPDATE accounts SET balance = balance + ? WHERE id = ?";
+
+        try (Connection connection = connect(); PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setBigDecimal(1, delta);
+            statement.setLong(2, accountId);
+
+            int result = statement.executeUpdate();
+
+            if (result == 0) {
+                throw new IllegalArgumentException("Account not found: " + accountId);
+            }
+
+        } catch (SQLException e) {
+            throw new IllegalStateException("Не удалось записать изменить баланс для счета " + accountId, e);
+        }
+    }
+
     private void recordTransaction(Long accountId, BigDecimal amount, String type) {
-        Long id = transactionIdSeq.getAndIncrement();
-        transactions.put(id, new Transaction(id, accountId, amount, type, LocalDateTime.now()));
+        String sql = "INSERT INTO transactions (account_id, amount, type) VALUES (?, ?, ?)";
+
+        try (Connection connection = connect(); PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setLong(1, accountId);
+            statement.setBigDecimal(2, amount);
+            statement.setString(3, type);
+
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException(
+                    "Не удалось записать транзакцию для счёта " + accountId, e
+            );
+        }
     }
 }

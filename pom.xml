@@ -15,10 +15,36 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
-    <!--
-        На этом этапе никаких зависимостей не нужно — только голая Java.
-        Зависимости (postgresql, hibernate, spring-boot, kafka-clients)
-        появятся здесь по мере прохождения модулей — это тоже часть
-        задания, добавлять их будете сами.
-    -->
+    <dependencies>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.8</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.liquibase</groupId>
+                <artifactId>liquibase-maven-plugin</artifactId>
+                <version>4.33.0</version>
+                <configuration>
+                    <searchPath>${project.basedir}/src/main/resources</searchPath>
+                    <changeLogFile>db/changelog/db.changelog-master.xml</changeLogFile>
+                    <url>jdbc:postgresql://localhost:5433/minibank</url>
+                    <username>minibank</username>
+                    <password>${env.MINIBANK_DB_PASSWORD}</password>
+                </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.postgresql</groupId>
+                        <artifactId>postgresql</artifactId>
+                        <version>42.7.8</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>
