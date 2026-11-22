@@ -105,7 +105,7 @@ public class BankService {
 
             try (ResultSet result = statement.executeQuery()) {
                 if (!result.next()) {
-                    throw new IllegalArgumentException("Client not found: " + clientId);
+                    throw new ClientNotFoundException(clientId);
                 }
 
                 long id = result.getLong("id");
@@ -128,7 +128,7 @@ public class BankService {
 
             try (ResultSet result = statement.executeQuery()) {
                 if (!result.next()) {
-                    throw new IllegalArgumentException("Account not found: " + accountId);
+                    throw new AccountNotFoundException(accountId);
                 }
 
                 long id = result.getLong("id");
@@ -146,7 +146,7 @@ public class BankService {
         Account from = getAccount(fromAccountId);
 
         if (from.getBalance().compareTo(amount) < 0) {
-            throw new IllegalStateException("Insufficient funds on account " + fromAccountId);
+            throw new InsufficientFundsException(fromAccountId);
         }
 
         changeBalance(fromAccountId, amount.negate());
@@ -167,7 +167,7 @@ public class BankService {
             int result = statement.executeUpdate();
 
             if (result == 0) {
-                throw new IllegalArgumentException("Account not found: " + accountId);
+                throw new AccountNotFoundException(accountId);
             }
 
         } catch (SQLException e) {
@@ -189,6 +189,24 @@ public class BankService {
             throw new IllegalStateException(
                     "Не удалось записать транзакцию для счёта " + accountId, e
             );
+        }
+    }
+
+    static class AccountNotFoundException extends IllegalArgumentException {
+        AccountNotFoundException(long accountId) {
+            super("Account not found: " + accountId);
+        }
+    }
+
+    static class InsufficientFundsException extends IllegalStateException {
+        InsufficientFundsException(long accountId) {
+            super("Insufficient funds on account " + accountId);
+        }
+    }
+
+    static class ClientNotFoundException extends IllegalArgumentException {
+        ClientNotFoundException(long clientId) {
+            super("Client not found: " + clientId);
         }
     }
 }
