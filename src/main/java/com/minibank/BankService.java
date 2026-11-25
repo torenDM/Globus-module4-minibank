@@ -6,6 +6,9 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.Persistence;
+import jakarta.persistence.PersistenceException;
 
 /**
  * MiniBank — "MVP", который наспех собрал предыдущий разработчик:
@@ -27,7 +30,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * существует и это нормально: то, что появится в модуле 7.1, — как
  * раз тот инструмент, который проблему полностью закрывает.
  */
-public class BankService {
+
+
+public class BankService implements AutoCloseable {
 
     private final Map<Long, Client> clients = new HashMap<>();
     private final Map<Long, Account> accounts = new HashMap<>();
@@ -36,6 +41,25 @@ public class BankService {
     private final AtomicLong clientIdSeq = new AtomicLong(1);
     private final AtomicLong accountIdSeq = new AtomicLong(1);
     private final AtomicLong transactionIdSeq = new AtomicLong(1);
+
+    private final EntityManagerFactory factory;
+
+    public BankService() {
+        String password = System.getenv("MINIBANK_DB_PASSWORD");
+        if (password == null || password.isBlank()) {
+            throw new IllegalStateException("Укажи MINIBANK_DB_PASSWORD в настройках запуска");
+        }
+
+        factory = Persistence.createEntityManagerFactory(
+                "minibank",
+                Map.of("jakarta.persistence.jdbc.password", password)
+        );
+    }
+
+    @Override
+    public void close() {
+        factory.close();
+    }
 
     private Connection connect() throws SQLException {
         return DriverManager.getConnection(
@@ -46,98 +70,54 @@ public class BankService {
     }
 
     public Client registerClient(String name, String email) {
-        String sql = "INSERT INTO clients (name, email) VALUES (?, ?) RETURNING id";
-
-        try (Connection connection = connect();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setString(1, name);
-            statement.setString(2, email);
-
-            try (ResultSet result = statement.executeQuery()) {
-                if (!result.next()) {
-                    throw new SQLException("База не вернула ID клиента");
-                }
-               long id = result.getLong("id");
-                return new Client(id, name, email);
-            }
-        } catch (SQLException e) {
+        try {
+            return factory.callInTransaction(em -> {
+                Client client = new Client(name, email);
+                em.persist(client);
+                return client;
+            });
+        } catch (PersistenceException e) {
             throw new IllegalStateException("Не удалось сохранить клиента", e);
         }
     }
 
     public Account openAccount(Long clientId, String accountNumber) {
-        getClient(clientId);
-
-        String sql = """
-            INSERT INTO accounts (client_id, account_number)
-            VALUES (?, ?)
-            RETURNING id, balance
-            """;
-
-        try (Connection connection = connect();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setLong(1, clientId);
-            statement.setString(2, accountNumber);
-
-            try (ResultSet result = statement.executeQuery()) {
-                if (!result.next()) {
-                    throw new SQLException("База не вернула данные счёта");
+        try {
+            return factory.callInTransaction(em -> {
+                Client client = em.find(Client.class, clientId);
+                if (client == null) {
+                    throw new ClientNotFoundException(clientId);
                 }
 
-                Long id = result.getLong("id");
-                BigDecimal balance = result.getBigDecimal("balance");
-                return new Account(id,clientId,accountNumber,balance);
-            }
-        } catch (SQLException e) {
+                Account account = new Account(client, accountNumber);
+                em.persist(account);
+                return account;
+            });
+        } catch (PersistenceException e) {
             throw new IllegalStateException("Не удалось открыть счёт", e);
         }
     }
 
     public Client getClient(Long clientId) {
-        String sql = "SELECT id, name, email FROM clients WHERE id = ?";
-
-        try (Connection connection = connect();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setLong(1, clientId);
-
-            try (ResultSet result = statement.executeQuery()) {
-                if (!result.next()) {
-                    throw new ClientNotFoundException(clientId);
-                }
-
-                long id = result.getLong("id");
-                String name = result.getString("name");
-                String email = result.getString("email");
-                return new Client(id, name, email);
+        try (var em = factory.createEntityManager()) {
+            Client client = em.find(Client.class, clientId);
+            if (client == null) {
+                throw new ClientNotFoundException(clientId);
             }
-        } catch (SQLException e) {
+            return client;
+        } catch (PersistenceException e) {
             throw new IllegalStateException("Не удалось прочитать клиента", e);
         }
     }
 
     public Account getAccount(Long accountId) {
-        String sql = "SELECT id, client_id, account_number, balance FROM accounts WHERE id = ?";
-
-        try (Connection connection = connect();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setLong(1, accountId);
-
-            try (ResultSet result = statement.executeQuery()) {
-                if (!result.next()) {
-                    throw new AccountNotFoundException(accountId);
-                }
-
-                long id = result.getLong("id");
-                long client_id = result.getLong("client_id");
-                String account_number = result.getString("account_number");
-                BigDecimal balance = result.getBigDecimal("balance");
-                return new Account(id, client_id, account_number, balance);
+        try (var em = factory.createEntityManager()) {
+            Account account = em.find(Account.class, accountId);
+            if (account == null) {
+                throw new AccountNotFoundException(accountId);
             }
-        } catch (SQLException e) {
+            return account;
+        } catch (PersistenceException e) {
             throw new IllegalStateException("Не удалось прочитать аккаунт", e);
         }
     }
@@ -157,38 +137,36 @@ public class BankService {
     }
 
     public void changeBalance(Long accountId, BigDecimal delta) {
-        String sql = "UPDATE accounts SET balance = balance + ? WHERE id = ?";
+        try {
+            factory.runInTransaction(em -> {
+                int updated = em.createQuery("""
+                    UPDATE Account a
+                    SET a.balance = a.balance + :delta
+                    WHERE a.id = :accountId
+                    """)
+                        .setParameter("delta", delta)
+                        .setParameter("accountId", accountId)
+                        .executeUpdate();
 
-        try (Connection connection = connect(); PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setBigDecimal(1, delta);
-            statement.setLong(2, accountId);
-
-            int result = statement.executeUpdate();
-
-            if (result == 0) {
-                throw new AccountNotFoundException(accountId);
-            }
-
-        } catch (SQLException e) {
-            throw new IllegalStateException("Не удалось записать изменить баланс для счета " + accountId, e);
+                if (updated == 0) {
+                    throw new AccountNotFoundException(accountId);
+                }
+            });
+        } catch (PersistenceException e) {
+            throw new IllegalStateException(
+                    "Не удалось изменить баланс счёта " + accountId, e);
         }
     }
 
     private void recordTransaction(Long accountId, BigDecimal amount, String type) {
-        String sql = "INSERT INTO transactions (account_id, amount, type) VALUES (?, ?, ?)";
-
-        try (Connection connection = connect(); PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setLong(1, accountId);
-            statement.setBigDecimal(2, amount);
-            statement.setString(3, type);
-
-            statement.executeUpdate();
-        } catch (SQLException e) {
+        try {
+            factory.runInTransaction(em -> {
+                Account account = em.getReference(Account.class, accountId);
+                em.persist(new Transaction(account, amount, type));
+            });
+        } catch (PersistenceException e) {
             throw new IllegalStateException(
-                    "Не удалось записать транзакцию для счёта " + accountId, e
-            );
+                    "Не удалось записать транзакцию для счёта " + accountId, e);
         }
     }
 
