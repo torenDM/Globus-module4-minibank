@@ -1,26 +1,41 @@
 package com.minibank;
 
+import jakarta.persistence.*;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+@Entity
+@Table(name = "transactions")
 public class Transaction {
 
-    private final Long id;
-    private final Long accountId;
-    private final BigDecimal amount;
-    private final String type;
-    private final LocalDateTime timestamp;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-    public Transaction(Long id, Long accountId, BigDecimal amount, String type, LocalDateTime timestamp) {
-        this.id = id;
-        this.accountId = accountId;
+    @ManyToOne(fetch = FetchType.EAGER, optional = false)
+    @JoinColumn(name = "account_id", nullable = false)
+    private Account account;
+
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal amount;
+
+    @Column(nullable = false, length = 20)
+    private String type;
+
+    @Column(name = "transaction_date", nullable = false, insertable = false)
+    private LocalDateTime timestamp;
+
+    protected Transaction() { }
+
+    public Transaction(Account account, BigDecimal amount, String type) {
+        this.account = account;
         this.amount = amount;
         this.type = type;
-        this.timestamp = timestamp;
     }
 
     public Long getId() { return id; }
-    public Long getAccountId() { return accountId; }
+    public Long getAccountId() { return account.getId(); }
     public BigDecimal getAmount() { return amount; }
     public String getType() { return type; }
     public LocalDateTime getTimestamp() { return timestamp; }
