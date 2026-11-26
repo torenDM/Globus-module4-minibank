@@ -1,8 +1,8 @@
 package com.minibank;
 
 import jakarta.persistence.*;
-
 import java.math.BigDecimal;
+import java.util.Objects;
 
 @Entity
 @Table(name = "accounts")
@@ -16,7 +16,7 @@ public class Account {
     @JoinColumn(name = "client_id", nullable = false)
     private Client client;
 
-    @Column(name = "account_number", nullable = false, length = 34)
+    @Column(name = "account_number", unique = true, nullable = false, length = 34)
     private String accountNumber;
 
     @Column(nullable = false, precision = 19, scale = 4)
@@ -28,6 +28,23 @@ public class Account {
         this.client = client;
         this.accountNumber = accountNumber;
         this.balance = BigDecimal.ZERO.setScale(4);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof Account other)) {
+            return false;
+        }
+        String number = getAccountNumber();
+        return number != null && number.equals(other.getAccountNumber());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(getAccountNumber());
     }
 
     public Long getId() { return id; }

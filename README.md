@@ -58,3 +58,16 @@
 - `POST /transfers` - создать перевод
 - `GET /accounts/{id}` - посмотреть счет
 - `GET /accounts/{id}/transactions` - посмотреть историю транзакций
+
+# Модуль 6 — Hibernate
+
+Перевёл `BankService` с JDBC на Hibernate. Клиенты, счета и операции по-прежнему хранятся в PostgreSQL. Схемой управляет Liquibase
+
+В `FetchDemo` загрузил трёх клиентов и их счета. С `EAGER` Hibernate выполнил 4 запроса. После перехода на `LAZY` и `LEFT JOIN FETCH` хватило одного. 
+Количество счетов совпало - 1, 1 и 2. Логи обоих запусков лежат в `docs/hibernate-eager.txt` и `docs/hibernate-lazy-join-fetch.txt`
+
+В `OrphanRemovalDemo` убрал тестовый счёт из списка клиента и проверил, что строка удалилась из базы. 
+В `HibernateDemo` проверил через `HashSet`, что клиенты с одинаковым email и счета с одинаковым номером считаются равными
+
+Для запуска нужно применить миграции через `liquibase:update` и указать `MINIBANK_DB_PASSWORD` в настройках запуска. 
+После миграции на Hibernate повторно проверил через `WebMain` создание клиента, открытие счёта и перевод

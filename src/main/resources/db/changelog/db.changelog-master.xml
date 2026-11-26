@@ -5,4 +5,5 @@
                                        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.33.xsd">
     <include file="001-schema.sql" relativeToChangelogFile="true"/>
     <include file="002-transactions-index.sql" relativeToChangelogFile="true"/>
+    <include file="003-account-number-unique.sql" relativeToChangelogFile="true"/>
 </databaseChangeLog>

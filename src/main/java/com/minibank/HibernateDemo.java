@@ -2,11 +2,16 @@ package com.minibank;
 
 import jakarta.persistence.Persistence;
 
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 
 public class HibernateDemo {
     public static void main(String[] args) {
         try (BankService bank = new BankService()) {
+
+
+
             String suffix = java.util.UUID.randomUUID().toString().substring(0, 8);
 
             Client client = bank.registerClient("Hibernate Demo", "jpa-" + suffix + "@example.test");
@@ -19,8 +24,13 @@ public class HibernateDemo {
 
             System.out.println("Отправитель: " + bank.getAccount(account.getId()).getBalance());
             System.out.println("Получатель: " + bank.getAccount(recipient.getId()).getBalance());
-            System.out.printf("Клиент %d, счёт %s, баланс %s%n",
-                    saved.getClientId(), saved.getAccountNumber(), saved.getBalance());
+            System.out.printf("Клиент %d, счёт %s, баланс %s%n", saved.getClientId(), saved.getAccountNumber(), saved.getBalance());
+
+            var clients = new HashSet<>(List.of(client, new Client("Другое имя", client.getEmail())));
+            var accounts = new HashSet<>(List.of(account, new Account(client, account.getAccountNumber())));
+
+            System.out.println("Клиентов в наборе: " + clients.size());
+            System.out.println("Счетов в наборе: " + accounts.size());
         }
     }
 }
