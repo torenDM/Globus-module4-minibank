@@ -1,0 +1,9 @@
+﻿--- Начало замера ---
+Hibernate: select c1_0.id,c1_0.email,c1_0.name from clients c1_0 where c1_0.id in (?,?,?) order by c1_0.id
+Hibernate: select a1_0.client_id,a1_0.id,a1_0.account_number,a1_0.balance from accounts a1_0 where a1_0.client_id=?
+Hibernate: select a1_0.client_id,a1_0.id,a1_0.account_number,a1_0.balance from accounts a1_0 where a1_0.client_id=?
+Hibernate: select a1_0.client_id,a1_0.id,a1_0.account_number,a1_0.balance from accounts a1_0 where a1_0.client_id=?
+Клиент 4 — счетов 1
+Клиент 5 — счетов 1
+Клиент 6 — счетов 2
+--- Конец замера ---
